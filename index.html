@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小红书矩阵系统</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Xiaohongshu Matrix</p>
+      <h1>小红书矩阵系统</h1>
+      <p class="topbar-note">按账号管理作品素材，支持计数、完成标记、作品复制、账号全部复制和作品下载。</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="ghost-button" type="button" data-action="refresh">刷新数据</button>
+      <button class="primary-button" type="button" data-action="add-account">新增账号</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar panel">
+      <div class="sidebar-head">
+        <div>
+          <p class="eyebrow">Accounts</p>
+          <h2>账号列表</h2>
+        </div>
+        <button class="icon-button" type="button" data-action="add-account" aria-label="新增账号">+</button>
+      </div>
+      <div id="account-list" class="account-list"></div>
+    </aside>
+
+    <section class="workspace">
+      <section class="hero-card panel">
+        <div id="account-summary"></div>
+        <div class="hero-actions" id="account-actions"></div>
+      </section>
+
+      <section class="metrics-grid" id="metrics-grid"></section>
+
+      <section class="panel works-panel">
+        <div class="works-head">
+          <div>
+            <p class="eyebrow">Works</p>
+            <h2>作品看板</h2>
+          </div>
+          <button class="primary-button" type="button" data-action="add-work">新增作品</button>
+        </div>
+        <div id="work-tabs" class="work-tabs"></div>
+      </section>
+
+      <section class="panel work-detail-panel" id="work-detail"></section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
