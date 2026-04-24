@@ -1,15 +1,13 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { spawn } from "node:child_process";
 import * as XLSX from "xlsx";
+import { readJsonFile, writeJsonFile } from "../../../lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DATA_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
-const CONFIG_FILE = path.join(DATA_DIR, "sync-config.json");
-const HISTORY_FILE = path.join(DATA_DIR, "sync-history.json");
+const CONFIG_FILE = "sync-config.json";
+const HISTORY_FILE = "sync-history.json";
 const TIME_ZONE = "Asia/Shanghai";
 const TRACKING_FIELDS = ["来源名称", "来源类型", "来源链接", "来源记录ID", "最新更新日期", "同步时间", "同步唯一键"];
 const READ_ONLY_FIELD_TYPES = new Set(["auto_number", "formula", "lookup", "created_time", "modified_time", "created_by", "modified_by"]);
@@ -461,6 +459,14 @@ async function getFirstBitableTableId(baseToken) {
 }
 
 async function getLarkStatus(targetUrl) {
+  if (process.env.VERCEL) {
+    return {
+      larkCli: false,
+      loggedIn: false,
+      message: "Vercel Serverless 不能运行本机 lark-cli。素材管理可正常使用，表格同步需要部署到可安装 lark-cli 的服务器。"
+    };
+  }
+
   try {
     const token = parseWikiToken(targetUrl);
     if (!token) return { larkCli: true, loggedIn: true, message: "Target is not a Wiki URL; auth will be checked on sync." };
@@ -474,6 +480,10 @@ async function getLarkStatus(targetUrl) {
 }
 
 function runLark(args) {
+  if (process.env.VERCEL) {
+    throw createError(400, "Vercel Serverless 不能运行本机 lark-cli。请把表格同步部署到可安装 lark-cli 的服务器，或改造成飞书开放平台 API 鉴权。");
+  }
+
   return new Promise((resolve, reject) => {
     const command = process.platform === "win32" ? "lark-cli.cmd" : "lark-cli";
     const child = spawn(command, args, { shell: process.platform === "win32", windowsHide: true });
@@ -500,9 +510,8 @@ function runLark(args) {
 }
 
 async function readConfig() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
   try {
-    const parsed = JSON.parse(await fs.readFile(CONFIG_FILE, "utf8"));
+    const parsed = await readJsonFile(CONFIG_FILE);
     return {
       target: parsed.target?.url ? parsed.target : DEFAULT_CONFIG.target,
       sources: Array.isArray(parsed.sources) ? parsed.sources.map(normalizeSource) : DEFAULT_CONFIG.sources
@@ -515,13 +524,12 @@ async function readConfig() {
 }
 
 async function writeConfig(config) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf8");
+  await writeJsonFile(CONFIG_FILE, config);
 }
 
 async function readHistory() {
   try {
-    const parsed = JSON.parse(await fs.readFile(HISTORY_FILE, "utf8"));
+    const parsed = await readJsonFile(HISTORY_FILE);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -530,8 +538,7 @@ async function readHistory() {
 }
 
 async function writeHistory(history) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(HISTORY_FILE, JSON.stringify(history, null, 2), "utf8");
+  await writeJsonFile(HISTORY_FILE, history);
 }
 
 function normalizeSource(source) {

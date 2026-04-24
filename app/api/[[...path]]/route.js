@@ -1,16 +1,21 @@
 import archiver from "archiver";
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
+import {
+  copyPrefix,
+  deleteFile,
+  deletePrefix,
+  readFileStream,
+  readJsonFile,
+  writeBinaryFile,
+  writeJsonFile
+} from "../../lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DATA_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
-const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
-const BACKUPS_DIR = path.join(DATA_DIR, "backups");
-const STATE_FILE = path.join(DATA_DIR, "state.json");
+const STATE_FILE = "state.json";
 const DEFAULT_WORK_COUNT = 5;
 
 export async function GET(request, context) {
@@ -141,16 +146,13 @@ async function handle(request, context, method) {
 
         if (!files.length) throw createError(400, "请选择图片文件");
 
-        const workDir = path.join(UPLOADS_DIR, account.id, work.id);
-        await fs.mkdir(workDir, { recursive: true });
-
         const images = [];
         for (const file of files) {
           const imageId = makeId("img");
           const ext = normalizeExt(path.extname(file.name || ""), file.type);
           const filename = `${imageId}${ext}`;
           const bytes = Buffer.from(await file.arrayBuffer());
-          await fs.writeFile(path.join(workDir, filename), bytes);
+          await writeBinaryFile(uploadPath(account.id, work.id, filename), bytes, file.type || "application/octet-stream");
 
           const image = {
             id: imageId,
@@ -175,7 +177,7 @@ async function handle(request, context, method) {
         const image = work.images.find((item) => item.id === parts[5]);
         if (!image) throw createError(404, "图片不存在");
         await backupState(state, "delete-image", [account.id]);
-        await removeFile(path.join(UPLOADS_DIR, account.id, work.id, image.filename));
+        await deleteFile(uploadPath(account.id, work.id, image.filename));
         work.images = work.images.filter((item) => item.id !== image.id);
         work.updatedAt = now();
         account.updatedAt = now();
@@ -225,10 +227,8 @@ async function handle(request, context, method) {
 }
 
 async function readState() {
-  await fs.mkdir(UPLOADS_DIR, { recursive: true });
   try {
-    const raw = await fs.readFile(STATE_FILE, "utf8");
-    const parsed = JSON.parse(raw);
+    const parsed = await readJsonFile(STATE_FILE);
     const state = { accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [] };
     if (normalizeState(state)) {
       await writeState(state);
@@ -243,19 +243,17 @@ async function readState() {
 }
 
 async function writeState(state) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+  await writeJsonFile(STATE_FILE, state);
 }
 
 async function backupState(state, label, accountIds = []) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupDir = path.join(BACKUPS_DIR, `${stamp}-${label}`);
-  await fs.mkdir(backupDir, { recursive: true });
-  await fs.writeFile(path.join(backupDir, "state.json"), JSON.stringify(state, null, 2), "utf8");
+  const backupDir = `backups/${stamp}-${label}`;
+  await writeJsonFile(`${backupDir}/state.json`, state);
 
   for (const accountId of accountIds) {
     try {
-      await fs.cp(path.join(UPLOADS_DIR, accountId), path.join(backupDir, "uploads", accountId), { recursive: true });
+      await copyPrefix(`uploads/${accountId}`, `${backupDir}/uploads/${accountId}`);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -324,9 +322,13 @@ async function createWorkArchive(account, work) {
   archive.pipe(stream);
 
   for (const image of work.images) {
-    const absolutePath = path.join(UPLOADS_DIR, account.id, work.id, image.filename);
     const entryName = `${safeFilePart(work.name)}-${safeFilePart(image.name || image.filename)}`;
-    archive.file(absolutePath, { name: entryName });
+    try {
+      const file = await readFileStream(uploadPath(account.id, work.id, image.filename));
+      archive.append(file.stream, { name: entryName });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
 
   if (!work.images.length) {
@@ -364,15 +366,11 @@ function requireWork(account, workId) {
 }
 
 async function removeAccountFiles(account) {
-  await fs.rm(path.join(UPLOADS_DIR, account.id), { recursive: true, force: true });
+  await deletePrefix(`uploads/${account.id}`);
 }
 
 async function removeWorkFiles(accountId, work) {
-  await fs.rm(path.join(UPLOADS_DIR, accountId, work.id), { recursive: true, force: true });
-}
-
-async function removeFile(filePath) {
-  await fs.rm(filePath, { force: true });
+  await deletePrefix(`uploads/${accountId}/${work.id}`);
 }
 
 async function readJson(request) {
@@ -408,6 +406,10 @@ function safeFilePart(value) {
   return String(value || "素材")
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
     .slice(0, 80);
+}
+
+function uploadPath(accountId, workId, filename) {
+  return `uploads/${accountId}/${workId}/${filename}`;
 }
 
 function makeId(prefix) {
