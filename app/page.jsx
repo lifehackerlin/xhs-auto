@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 import {
   Check,
   Clipboard,
@@ -24,7 +25,7 @@ export default function Home() {
   const [activeAccountId, setActiveAccountId] = useState(null);
   const [activeWorkId, setActiveWorkId] = useState(null);
   const [accountName, setAccountName] = useState("");
-  const [captionText, setCaptionText] = useState("");
+  const [captionDrafts, setCaptionDrafts] = useState({});
   const [captionEdits, setCaptionEdits] = useState({});
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
@@ -42,6 +43,7 @@ export default function Home() {
     [activeAccount, activeWorkId]
   );
   const stats = activeAccount ? getAccountStats(activeAccount) : { works: 0, done: 0, images: 0, captions: 0 };
+  const captionText = activeWork?.id ? captionDrafts[activeWork.id] || "" : "";
 
   useEffect(() => {
     const saved = readSelection();
@@ -170,7 +172,7 @@ export default function Home() {
     if (!window.confirm(`重置「${activeAccount.name}」的 5 个作品？当前图片和文案会被清空。`)) return;
     await run("reset", async () => {
       const result = await api(`/api/accounts/${activeAccount.id}/reset-works`, { method: "POST" });
-      setCaptionText("");
+      setCaptionDrafts({});
       setCaptionEdits({});
       await refresh({ activeAccountId: activeAccount.id, activeWorkId: result.account.works?.[0]?.id });
       showToast("当前账号已重置");
@@ -183,7 +185,7 @@ export default function Home() {
     await run("reset-all", async () => {
       const result = await api("/api/reset-all", { method: "POST" });
       const firstAccount = result.accounts?.[0] || null;
-      setCaptionText("");
+      setCaptionDrafts({});
       setCaptionEdits({});
       await refresh({ activeAccountId: firstAccount?.id, activeWorkId: firstAccount?.works?.[0]?.id });
       showToast("所有账号已重置");
@@ -247,7 +249,7 @@ export default function Home() {
     if (!text) return showToast("先写文案");
     await run("caption", async () => {
       await api(`/api/accounts/${activeAccount.id}/works/${activeWork.id}/captions`, { method: "POST", body: { text } });
-      setCaptionText("");
+      setCaptionDrafts((current) => ({ ...current, [activeWork.id]: "" }));
       await refresh({ activeAccountId: activeAccount.id, activeWorkId: activeWork.id });
       showToast("文案已加入");
     });
@@ -329,17 +331,22 @@ export default function Home() {
             <strong>Matrix Studio</strong>
           </div>
         </div>
-        <div className="new-account">
-          <UserRound size={16} />
-          <input
-            value={accountName}
-            onChange={(event) => setAccountName(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && addAccount()}
-            placeholder="新增账号"
-          />
-          <button className="icon-button primary" onClick={addAccount} title="新增账号">
-            {busy === "account" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
-          </button>
+        <div className="top-actions">
+          <Link className="sync-link" href="/sync">
+            表格同步
+          </Link>
+          <div className="new-account">
+            <UserRound size={16} />
+            <input
+              value={accountName}
+              onChange={(event) => setAccountName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && addAccount()}
+              placeholder="新增账号"
+            />
+            <button className="icon-button primary" onClick={addAccount} title="新增账号">
+              {busy === "account" ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -389,6 +396,12 @@ export default function Home() {
                   <span>
                     {stats.done}/{stats.works} 完成 · {stats.images} 张图片 · {stats.captions} 条文案
                   </span>
+                </div>
+                <div className="account-metrics">
+                  <Metric label="作品" value={stats.works} />
+                  <Metric label="完成" value={stats.done} />
+                  <Metric label="图片" value={stats.images} />
+                  <Metric label="文案" value={stats.captions} />
                 </div>
                 <button className="soft-command danger" onClick={deleteAccount}>
                   <Trash2 size={15} /> 删除账号
@@ -505,7 +518,9 @@ export default function Home() {
                     <div className="caption-compose">
                       <textarea
                         value={captionText}
-                        onChange={(event) => setCaptionText(event.target.value)}
+                        onChange={(event) =>
+                          setCaptionDrafts((current) => ({ ...current, [activeWork.id]: event.target.value }))
+                        }
                         placeholder="标题、正文、话题标签"
                         rows={5}
                       />
@@ -550,6 +565,15 @@ export default function Home() {
 
       <div className={clsx("toast", toast && "show")}>{toast}</div>
     </main>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <span>
+      <strong>{value}</strong>
+      {label}
+    </span>
   );
 }
 
